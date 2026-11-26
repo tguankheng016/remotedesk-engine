@@ -1143,11 +1143,11 @@ pub fn main_get_socks() -> Vec<String> {
 }
 
 pub fn main_get_app_name() -> String {
-    get_app_name()
+    crate::get_app_display_name() // RemoteDesk: window titles and UI
 }
 
 pub fn main_get_app_name_sync() -> SyncReturn<String> {
-    SyncReturn(get_app_name())
+    SyncReturn(crate::get_app_display_name()) // RemoteDesk: window titles and UI
 }
 
 pub fn main_uri_prefix_sync() -> SyncReturn<String> {
