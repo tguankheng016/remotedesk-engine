@@ -25,7 +25,10 @@ so upstream merges and AGPL reviews stay easy.
 | `flutter/windows/runner/Runner.rc` | Company, product, description and copyright strings | Branding (Explorer file properties) |
 | `res/icon.png`, `res/mac-icon.png`, `res/32x32.png`, `res/64x64.png`, `res/128x128*.png`, `res/icon.ico`, `res/tray-icon.ico`, `flutter/windows/runner/resources/app_icon.ico` | MochoDesk logo | Branding |
 | `flutter/assets/icon.png` | New. MochoDesk logo (256 px); `loadIcon` prefers it over `icon.svg` | Branding |
-| `.github/workflows/remotedesk-build.yml` | Renames `rustdesk.exe` to `MochoDeskRemote.exe`; MSI built with `--app-name MochoDeskRemote --manufacturer MochoDesk` | The installer and MSI expect `<APP_NAME>.exe` |
+| `res/msi/preprocess.py` | New `--display-name` (MSI ProductName, shortcuts, installer text); Apps & Features links point at this repo; `update_license_file` disabled | Customers see "MochoDesk Remote"; the tray shortcut keeps `MochoDeskRemote Tray` because the engine deletes it by that name |
+| `res/msi/Package/Package.wxs` | `Package Name` uses `$(var.DisplayName)` | Apps & Features shows "MochoDesk Remote" |
+| `res/msi/Package/License.rtf` | Replaced RustDesk's EULA with our AGPL-3.0 notice, RustDesk attribution and source link | Upstream's rewrite made the EULA read as if we hold RustDesk's copyright |
+| `src/platform/windows/msi_registry.rs` | MSI uninstall entries match the app name or the display name | The MSI's DisplayName is now the display name |
 
 ## Changes in `libs/hbb_common`
 

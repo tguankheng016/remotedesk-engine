@@ -27,15 +27,15 @@ g_arpsystemcomponent = {
     },
     "Contact": {
         "msi": "ARPCONTACT",
-        "v": "https://github.com/rustdesk/rustdesk",
+        "v": "https://github.com/tguankheng016/remotedesk-engine",  # RemoteDesk
     },
     "HelpLink": {
         "msi": "ARPHELPLINK",
-        "v": "https://github.com/rustdesk/rustdesk/issues/",
+        "v": "https://github.com/tguankheng016/remotedesk-engine/issues",  # RemoteDesk
     },
     "ReadMe": {
         "msi": "ARPREADME",
-        "v": "https://github.com/rustdesk/rustdesk",
+        "v": "https://github.com/tguankheng016/remotedesk-engine",  # RemoteDesk
     },
 }
 
@@ -82,6 +82,10 @@ def make_parser():
     )
     parser.add_argument(
         "--app-name", type=str, default="RustDesk", help="The app name."
+    )
+    # RemoteDesk: customer-facing name (MSI ProductName, shortcuts, installer text).
+    parser.add_argument(
+        "--display-name", type=str, default="", help="The display name. Defaults to the app name."
     )
     parser.add_argument(
         "-v", "--version", type=str, default="", help="The app version."
@@ -250,7 +254,8 @@ def gen_pre_vars(args, dist_dir):
             f'{indent}<?define Version="{g_version}" ?>\n',
             f'{indent}<?define Manufacturer="{args.manufacturer}" ?>\n',
             f'{indent}<?define Product="{args.app_name}" ?>\n',
-            f'{indent}<?define Description="{args.app_name} Installer" ?>\n',
+            f'{indent}<?define DisplayName="{args.display_name}" ?>\n',
+            f'{indent}<?define Description="{args.display_name} Installer" ?>\n',
             f'{indent}<?define ProductLower="{args.app_name.lower()}" ?>\n',
             f'{indent}<?define RegKeyRoot=".$(var.ProductLower)" ?>\n',
             f'{indent}<?define RegKeyInstall="$(var.RegKeyRoot)\\Install" ?>\n',
@@ -270,13 +275,15 @@ def gen_pre_vars(args, dist_dir):
     )
 
 
-def replace_app_name_in_langs(app_name):
+def replace_app_name_in_langs(app_name, display_name):
     langs_dir = Path(sys.argv[0]).parent.joinpath("Package/Language")
     for file_path in langs_dir.glob("*.wxl"):
         with open(file_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         for i, line in enumerate(lines):
-            lines[i] = line.replace("RustDesk", app_name)
+            # RemoteDesk: the tray shortcut keeps the app name; the engine deletes "{app_name} Tray.lnk".
+            name = app_name if 'Id="SC_Client_Tray"' in line else display_name
+            lines[i] = line.replace("RustDesk", name)
         with open(file_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
@@ -498,6 +505,8 @@ def init_global_vars(dist_dir, app_name, args):
 
 
 def update_license_file(app_name):
+    # RemoteDesk: License.rtf is our own AGPL notice. Don't rewrite the RustDesk attribution.
+    return
     if app_name == "RustDesk":
         return
     license_file = Path(sys.argv[0]).parent.joinpath("Package/License.rtf")
@@ -531,6 +540,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     app_name = args.app_name
+    if not args.display_name:
+        args.display_name = app_name
     dist_dir = Path(sys.argv[0]).parent.joinpath(args.dist_dir).resolve()
 
     if not prepare_resources():
@@ -568,4 +579,4 @@ if __name__ == "__main__":
     if not gen_custom_dialog_bitmaps():
         sys.exit(-1)
 
-    replace_app_name_in_langs(args.app_name)
+    replace_app_name_in_langs(args.app_name, args.display_name)

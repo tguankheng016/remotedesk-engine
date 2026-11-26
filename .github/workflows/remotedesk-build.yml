@@ -249,7 +249,7 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/MochoDeskRemote.exe
           popd
           mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/mochodesk-remote-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -267,26 +267,26 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           pushd ./res/msi
-          python preprocess.py --arp -d ../../rustdesk --app-name MochoDeskRemote --manufacturer "MochoDesk"
+          python preprocess.py --arp -d ../../rustdesk --app-name MochoDeskRemote --display-name "MochoDesk Remote" --manufacturer "MochoDesk"
           nuget restore msi.sln
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
           msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-          mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
-          sha256sum ../../SignOutput/rustdesk-*.msi
+          mv $msi.FullName ../../SignOutput/mochodesk-remote-${{ env.VERSION }}-${{ matrix.job.arch }}.msi
+          sha256sum ../../SignOutput/mochodesk-remote-*.msi
 
       - name: Write SHA-256 checksums
         shell: bash
         run: |
           cd SignOutput
-          sha256sum rustdesk-*.exe rustdesk-*.msi | tee SHA256SUMS
+          sha256sum mochodesk-remote-*.exe mochodesk-remote-*.msi | tee SHA256SUMS
 
       - name: Upload installer, portable exe and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: remotedesk-engine-windows-${{ matrix.job.arch }}
           path: |
-            ./SignOutput/rustdesk-*.exe
-            ./SignOutput/rustdesk-*.msi
+            ./SignOutput/mochodesk-remote-*.exe
+            ./SignOutput/mochodesk-remote-*.msi
             ./SignOutput/SHA256SUMS
           if-no-files-found: error
