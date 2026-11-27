@@ -13,7 +13,7 @@ so upstream merges and AGPL reviews stay easy.
 | File | Change | Why |
 |---|---|---|
 | `.gitmodules` | `libs/hbb_common` URL points at our hbb_common fork | Branding and default-server changes live in hbb_common |
-| `.github/workflows/remotedesk-build.yml` | New. Windows x64 build, trimmed from `flutter-build.yml` | CI for our engine; uploads the portable exe, the MSI and `SHA256SUMS` |
+| `.github/workflows/remotedesk-build.yml` | New. Windows x64 (Flutter) and x86 (Sciter) builds, trimmed from `flutter-build.yml`; macOS env vars removed | CI for our engine; uploads the portable exes, the x64 MSI and `SHA256SUMS`. 32-bit Windows needs Sciter because Flutter has no 32-bit Windows support |
 | `REMOTEDESK_CHANGES.md` | New (this file) | Change log for merges and AGPL review |
 | `src/common.rs` | Added `get_app_display_name()` | Customer-facing name, kept apart from the technical `APP_NAME` |
 | `src/lang.rs` | Translated text replaces "RustDesk" with the display name | "MochoDesk Remote" in every UI string |

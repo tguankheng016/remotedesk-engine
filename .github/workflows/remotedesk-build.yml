@@ -1,6 +1,7 @@
-# RemoteDesk: Windows x64 engine build, trimmed from flutter-build.yml at upstream 1.5.3.
-# Only the Windows x64 Flutter job is kept; signing, ARM64, release publishing and the
-# update-metadata steps are removed. Steps are copied verbatim so upstream merges stay easy.
+# RemoteDesk: Windows engine build, trimmed from flutter-build.yml at upstream 1.5.3.
+# Kept: the Windows x64 Flutter job and the Windows x86 (32-bit) Sciter job. Signing, ARM64,
+# macOS, release publishing and the update-metadata steps are removed. Steps are copied
+# verbatim so upstream merges stay easy.
 # See REMOTEDESK_CHANGES.md.
 name: RemoteDesk engine build
 
@@ -15,7 +16,6 @@ on:
 env:
   SCITER_RUST_VERSION: "1.75" # https://github.com/rustdesk/rustdesk/discussions/7503, also 1.78 has ABI change which causes our sciter version not working, https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
   RUST_VERSION: "1.75" # sciter failed on m1 with 1.78 because of https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
-  MAC_RUST_VERSION: "1.81" # 1.81 is requred for macos, because of https://github.com/yury/cidre requires 1.81
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
   # Windows arm64 only: the first stable Flutter to ship a native arm64 Windows Dart SDK +
@@ -24,10 +24,6 @@ env:
   # jobs patch the few 3.44-only source/pubspec changes on the fly (see "Patch RustDesk sources
   # for Flutter 3.44").
   FLUTTER_WINDOWS_ARM_VERSION: "3.44.9"
-  # macOS arm64 only: 3.24.5's engine crashes in attributedSubstringForProposedRange
-  # (https://github.com/rustdesk/rustdesk/issues/16817, https://github.com/flutter/flutter/issues/153157).
-  # x86_64 stays on FLUTTER_VERSION: 3.44's FlutterMacOS needs macOS 10.15 there, and it targets 10.14.
-  FLUTTER_MACOS_ARM_VERSION: "3.44.9"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   # vcpkg version: 2026.07.29
   # If we change the `VCPKG COMMIT_ID`, please remember:
@@ -288,5 +284,143 @@ jobs:
           path: |
             ./SignOutput/mochodesk-remote-*.exe
             ./SignOutput/mochodesk-remote-*.msi
+            ./SignOutput/SHA256SUMS
+          if-no-files-found: error
+
+  # Copied from flutter-build.yml build-for-windows-sciter (upstream 1.5.3): the 32-bit Windows
+  # engine. Flutter has no 32-bit Windows support, so this build uses the Sciter UI. Portable exe
+  # only (upstream builds no x86 MSI). Runs in parallel with the x64 job; needs no bridge.
+  build-windows-x86-sciter:
+    name: windows x86 (sciter)
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - {
+              target: i686-pc-windows-msvc,
+              os: windows-2022,
+              arch: x86,
+              vcpkg-triplet: x86-windows-static,
+            }
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install LLVM and Clang
+        uses: rustdesk-org/install-llvm-action-32bit@6aa7d9ad3df84dff01cd4596dd0fc880a7f47fce # no release tag; commit 2026-05-26
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          # Sciter's abi_thiscall feature requires nightly Rust.
+          # Use an i686 host toolchain so build scripts can load the 32-bit LLVM installed above.
+          # Since rustup 1.29.1, i686 toolchains on x64 Windows require --force-non-host
+          # for both installation and default selection, even though WOW64 can run them.
+          # See https://github.com/rust-lang/rustup/pull/4935.
+          rustup toolchain install nightly-2023-10-13-${{ matrix.job.target }} \
+            --target ${{ matrix.job.target }} --component rustfmt \
+            --profile minimal --no-self-update --force-non-host
+          rustup default nightly-2023-10-13-${{ matrix.job.target }} --force-non-host
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: ${{ matrix.job.os }}-sciter
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.job.vcpkg-triplet }}
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --triplet ${{ matrix.job.vcpkg-triplet }} \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+          head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
+        shell: bash
+
+      - name: Build rustdesk
+        shell: bash
+        run: |
+          python3 res/inline-sciter.py
+          # Patch sciter x86
+          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' ./Cargo.toml
+          cargo update -p sciter-rs --precise 674e07d3066ca9a92ced3816203ab6b652629d1e
+          cargo build --locked --features inline,vram,hwcodec --release --bins
+          mkdir -p ./Release
+          # RemoteDesk: the exe must be named after APP_NAME (hbb_common), as in the x64 job.
+          mv ./target/release/rustdesk.exe ./Release/MochoDeskRemote.exe
+          curl -LJ -o ./Release/sciter.dll https://github.com/c-smile/sciter-sdk/raw/master/bin.win/x32/sciter.dll
+          curl -LJ -o ./usbmmidd_v2.zip https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip
+          unzip usbmmidd_v2.zip
+          # Do not remove x64 files, because the user may run the 32bit version on a 64bit system.
+          # Do not remove ./usbmmidd_v2/deviceinstaller64.exe, as x86 exe cannot install and uninstall drivers when running on x64,
+          # we need the x64 exe to install and uninstall the driver.
+          rm -rf ./usbmmidd_v2/deviceinstaller.exe ./usbmmidd_v2/usbmmidd.bat
+          mv ./usbmmidd_v2 ./Release || true
+
+      - name: Check the exe starts
+        shell: powershell
+        run: |
+          $reportedVersion = (& ".\Release\MochoDeskRemote.exe" --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "MochoDeskRemote --version exited with $LASTEXITCODE" }
+          if ($reportedVersion -cne $env:VERSION) { throw "Engine reports version '$reportedVersion', expected '$env:VERSION'" }
+
+      - name: Upload unsigned
+        if: env.UPLOAD_ARTIFACT == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rustdesk-unsigned-windows-${{ matrix.job.arch }}
+          path: Release
+
+      - name: Build self-extracted executable
+        shell: bash
+        run: |
+          sed -i '/dpiAware/d' res/manifest.xml
+          pushd ./libs/portable
+          pip3 install -r requirements.txt
+          python3 ./generate.py -f ../../Release/ -o . -e ../../Release/MochoDeskRemote.exe
+          popd
+          mkdir -p ./SignOutput
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/mochodesk-remote-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.exe
+
+      - name: Write SHA-256 checksums
+        shell: bash
+        run: |
+          cd SignOutput
+          sha256sum mochodesk-remote-*.exe | tee SHA256SUMS
+
+      - name: Upload portable exe and checksums
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: remotedesk-engine-windows-${{ matrix.job.arch }}
+          path: |
+            ./SignOutput/mochodesk-remote-*.exe
             ./SignOutput/SHA256SUMS
           if-no-files-found: error
